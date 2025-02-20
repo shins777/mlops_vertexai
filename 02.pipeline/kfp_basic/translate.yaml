@@ -1,0 +1,109 @@
+# PIPELINE DEFINITION
+# Name: translate
+# Inputs:
+#    project: str
+#    text: str
+# Outputs:
+#    output_1: str
+#    output_2: str
+components:
+  comp-translate:
+    executorLabel: exec-translate
+    inputDefinitions:
+      parameters:
+        project:
+          parameterType: STRING
+        text:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_1:
+          parameterType: STRING
+        output_2:
+          parameterType: STRING
+deploymentSpec:
+  executors:
+    exec-translate:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - translate
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.5.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'google-cloud-translate'\
+          \ && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef translate(\n    text: str,\n    project:str,\n\n) -> NamedTuple(\n\
+          \    \"Outputs\",\n    [\n        (\"output_1\", str),\n        (\"output_2\"\
+          , str),\n    ],\n):\n\n    from google.cloud import translate_v3\n\n   \
+          \ client = translate_v3.TranslationServiceClient()\n    parent = f\"projects/{project}/locations/global\"\
+          \n\n     # Call translation api\n    response_en = client.translate_text(\n\
+          \        contents=[text],\n        source_language_code=\"ko-KR\",\n   \
+          \     target_language_code=\"en\",\n        parent=parent,\n        mime_type=\"\
+          text/plain\",\n    )\n\n    # Call translation api\n    response_ja = client.translate_text(\n\
+          \        contents=[text],\n        source_language_code=\"ko\",\n      \
+          \  target_language_code=\"ja\",\n        parent=parent,\n        mime_type=\"\
+          text/plain\",\n    )\n\n    o1 = f\"translation 1: {response_en.translations[0].translated_text}\"\
+          \n    o2 = f\"translation 2: {response_ja.translations[0].translated_text}\"\
+          \n\n    print(f\"### output 1: {o1}; output 2: {o2}\")\n\n    return (o1,\
+          \ o2)\n\n"
+        image: python:3.10
+pipelineInfo:
+  name: translate
+root:
+  dag:
+    outputs:
+      parameters:
+        output_1:
+          valueFromParameter:
+            outputParameterKey: output_1
+            producerSubtask: translate
+        output_2:
+          valueFromParameter:
+            outputParameterKey: output_2
+            producerSubtask: translate
+    tasks:
+      translate:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-translate
+        inputs:
+          parameters:
+            project:
+              componentInputParameter: project
+            text:
+              componentInputParameter: text
+        taskInfo:
+          name: translate
+  inputDefinitions:
+    parameters:
+      project:
+        parameterType: STRING
+      text:
+        parameterType: STRING
+  outputDefinitions:
+    parameters:
+      output_1:
+        parameterType: STRING
+      output_2:
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.5.0

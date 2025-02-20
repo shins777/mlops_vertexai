@@ -1,0 +1,236 @@
+{
+  "components": {
+    "comp-collect": {
+      "executorLabel": "exec-collect",
+      "inputDefinitions": {
+        "parameters": {
+          "original": {
+            "parameterType": "STRING"
+          },
+          "tran_output_1": {
+            "parameterType": "STRING"
+          },
+          "tran_output_2": {
+            "parameterType": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "parameters": {
+          "Output": {
+            "parameterType": "STRING"
+          }
+        }
+      }
+    },
+    "comp-get-input": {
+      "executorLabel": "exec-get-input",
+      "inputDefinitions": {
+        "parameters": {
+          "text": {
+            "parameterType": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "parameters": {
+          "Output": {
+            "parameterType": "STRING"
+          }
+        }
+      }
+    },
+    "comp-translate": {
+      "executorLabel": "exec-translate",
+      "inputDefinitions": {
+        "parameters": {
+          "project": {
+            "parameterType": "STRING"
+          },
+          "text": {
+            "parameterType": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "parameters": {
+          "output_1": {
+            "parameterType": "STRING"
+          },
+          "output_2": {
+            "parameterType": "STRING"
+          }
+        }
+      }
+    }
+  },
+  "defaultPipelineRoot": "gs://mlops-0221/pipeline/translate",
+  "deploymentSpec": {
+    "executors": {
+      "exec-collect": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "collect"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.5.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef collect(original: str, tran_output_1: str, tran_output_2: str) -> str:\n\n    import logging\n\n    logger = logging.getLogger()\n    output = f\"original: {original}; translation_1: {tran_output_1}; translation_2: {tran_output_2}\"\n\n    logger.info(f\"### original: {original}\")\n    logger.info(f\"### tran_output_1: {tran_output_1}\")\n    logger.info(f\"### translation_2: {tran_output_2}\")\n\n    return output\n\n"
+          ],
+          "image": "python:3.10"
+        }
+      },
+      "exec-get-input": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "get_input"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.5.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef get_input(text: str) -> str:\n\n    print(f\"### input: {text}\")\n\n    return text\n\n"
+          ],
+          "image": "python:3.10"
+        }
+      },
+      "exec-translate": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "translate"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.5.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&  python3 -m pip install --quiet --no-warn-script-location 'google-cloud-translate' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef translate(\n    text: str,\n    project:str,\n\n) -> NamedTuple(\n    \"Outputs\",\n    [\n        (\"output_1\", str),\n        (\"output_2\", str),\n    ],\n):\n\n    from google.cloud import translate_v3\n\n    client = translate_v3.TranslationServiceClient()\n    parent = f\"projects/{project}/locations/global\"\n\n     # Call translation api\n    response_en = client.translate_text(\n        contents=[text],\n        source_language_code=\"ko-KR\",\n        target_language_code=\"en\",\n        parent=parent,\n        mime_type=\"text/plain\",\n    )\n\n    # Call translation api\n    response_ja = client.translate_text(\n        contents=[text],\n        source_language_code=\"ko\",\n        target_language_code=\"ja\",\n        parent=parent,\n        mime_type=\"text/plain\",\n    )\n\n    o1 = f\"translation 1: {response_en.translations[0].translated_text}\"\n    o2 = f\"translation 2: {response_ja.translations[0].translated_text}\"\n\n    print(f\"### output 1: {o1}; output 2: {o2}\")\n\n    return (o1, o2)\n\n"
+          ],
+          "image": "python:3.10"
+        }
+      }
+    }
+  },
+  "pipelineInfo": {
+    "description": "pipeline to translate and collect",
+    "name": "translation-pipeline"
+  },
+  "root": {
+    "dag": {
+      "tasks": {
+        "collect": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-collect"
+          },
+          "dependentTasks": [
+            "get-input",
+            "translate"
+          ],
+          "inputs": {
+            "parameters": {
+              "original": {
+                "taskOutputParameter": {
+                  "outputParameterKey": "Output",
+                  "producerTask": "get-input"
+                }
+              },
+              "tran_output_1": {
+                "taskOutputParameter": {
+                  "outputParameterKey": "output_1",
+                  "producerTask": "translate"
+                }
+              },
+              "tran_output_2": {
+                "taskOutputParameter": {
+                  "outputParameterKey": "output_2",
+                  "producerTask": "translate"
+                }
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "collect"
+          }
+        },
+        "get-input": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-get-input"
+          },
+          "inputs": {
+            "parameters": {
+              "text": {
+                "componentInputParameter": "text"
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "get-input"
+          }
+        },
+        "translate": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-translate"
+          },
+          "dependentTasks": [
+            "get-input"
+          ],
+          "inputs": {
+            "parameters": {
+              "project": {
+                "componentInputParameter": "project"
+              },
+              "text": {
+                "taskOutputParameter": {
+                  "outputParameterKey": "Output",
+                  "producerTask": "get-input"
+                }
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "translate"
+          }
+        }
+      }
+    },
+    "inputDefinitions": {
+      "parameters": {
+        "project": {
+          "parameterType": "STRING"
+        },
+        "text": {
+          "parameterType": "STRING"
+        }
+      }
+    }
+  },
+  "schemaVersion": "2.1.0",
+  "sdkVersion": "kfp-2.5.0"
+}

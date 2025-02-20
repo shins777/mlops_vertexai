@@ -1,0 +1,144 @@
+{
+  "components": {
+    "comp-custom-trainer": {
+      "executorLabel": "exec-custom-trainer",
+      "inputDefinitions": {
+        "parameters": {
+          "boost_rounds": {
+            "parameterType": "NUMBER_INTEGER"
+          },
+          "label_uri": {
+            "parameterType": "STRING"
+          },
+          "learning_rate": {
+            "parameterType": "NUMBER_DOUBLE"
+          },
+          "max_depth": {
+            "parameterType": "NUMBER_INTEGER"
+          },
+          "model_id": {
+            "parameterType": "STRING"
+          },
+          "model_uri": {
+            "parameterType": "STRING"
+          },
+          "train_uri": {
+            "parameterType": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "metrics": {
+            "artifactType": {
+              "schemaTitle": "system.Metrics",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "model_metadata": {
+            "artifactType": {
+              "schemaTitle": "system.Model",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      }
+    }
+  },
+  "deploymentSpec": {
+    "executors": {
+      "exec-custom-trainer": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "custom_trainer"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.10.1' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&  python3 -m pip install --quiet --no-warn-script-location 'numpy' 'pandas' 'scikit-learn' 'xgboost' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef custom_trainer(\n    train_uri: str,\n    label_uri: str,\n    max_depth: int,\n    learning_rate: float,\n    boost_rounds: int,\n    model_uri: str,\n    model_id:str,\n    metrics: Output[Metrics],\n    model_metadata: Output[Model],\n):\n\n    # import libraries\n    import logging\n    import uuid\n    from pathlib import Path as path\n\n    import pandas as pd\n    import xgboost as xgb\n    from sklearn.metrics import accuracy_score\n    from sklearn.model_selection import train_test_split\n\n    # variables\n    gs_prefix = \"gs://\"\n    gcsfuse_prefix = \"/gcs/\"\n    train_path = train_uri.replace(gs_prefix, gcsfuse_prefix)\n    label_path = label_uri.replace(gs_prefix, gcsfuse_prefix)\n    model_path = model_uri.replace(gs_prefix, gcsfuse_prefix)\n\n    def get_logger():\n        \"\"\"\n        Get the logger\n        \"\"\"\n        logger = logging.getLogger(__name__)\n        logger.setLevel(logging.INFO)\n        handler = logging.StreamHandler()\n        handler.setFormatter(\n            logging.Formatter(\"%(asctime)s - %(name)s - %(levelname)s - %(message)s\")\n        )\n        logger.addHandler(handler)\n        return logger\n\n    def get_data(\n        train_path: str, label_path: str\n    ) -> (xgb.DMatrix, pd.DataFrame, pd.DataFrame):\n        \"\"\"\n        Get the data\n        Args:\n            train_path: the path of the train data\n            label_path: the path of the label data\n        Returns:\n            the train data and the label data\n        \"\"\"\n        # Load data into pandas, then use `.values` to get NumPy arrays\n        data = pd.read_csv(train_path).values\n        labels = pd.read_csv(label_path).values\n\n        # Convert one-column 2D array into 1D array for use with XGBoost\n        labels = labels.reshape((labels.size,))\n        train_data, test_data, train_labels, test_labels = train_test_split(\n            data, labels, test_size=0.2, random_state=7\n        )\n\n        # Load data into DMatrix object\n        dtrain = xgb.DMatrix(train_data, label=train_labels)\n        return dtrain, test_data, test_labels\n\n    def train_model(max_depth: int, eta: int, boost_rounds, dtrain: xgb.DMatrix):\n        \"\"\"\n        Train the model\n        Args:\n            max_depth: the max depth of the model\n            eta: the eta of the model\n            boost_rounds: the boost rounds of the model\n            dtrain: the train data\n        Returns:\n            the trained model\n        \"\"\"\n        # Train XGBoost model\n        param = {\"max_depth\": max_depth, \"eta\": eta}\n        model = xgb.train(param, dtrain, num_boost_round=boost_rounds)\n        return model\n\n    def evaluate_model(model, test_data, test_labels):\n        \"\"\"\n        Evaluate the model\n        Args:\n            model: the trained model\n            test_data: the test data\n            test_labels: the test labels\n        Returns:\n            the accuracy of the model\n        \"\"\"\n        dtest = xgb.DMatrix(test_data)\n        pred = model.predict(dtest)\n        predictions = [round(value) for value in pred]\n        # Evaluate predictions\n        accuracy = accuracy_score(test_labels, predictions)\n        return accuracy\n\n    def save_model(model, model_path):\n        \"\"\"\n        Save the model\n        Args:\n            model: the trained model\n            model_path: the path of the model\n        \"\"\"\n        #model_id = str(uuid.uuid1())\n        model_path = f\"{model_path}/{model_id}/model.bst\"\n        path(model_path).parent.mkdir(parents=True, exist_ok=True)\n        model.save_model(model_path)\n\n    # Main ----------------------------------------------\n\n    dtrain, test_data, test_labels = get_data(train_path, label_path)\n    model = train_model(max_depth, learning_rate, boost_rounds, dtrain)\n    accuracy = evaluate_model(model, test_data, test_labels)\n    save_model(model, model_path)\n\n    # Metadata ------------------------------------------\n    metrics.log_metric(\"accurancy\", accuracy)\n    model_metadata.uri = model_uri\n\n"
+          ],
+          "image": "python:3.9.0"
+        }
+      }
+    }
+  },
+  "pipelineInfo": {
+    "name": "pipeline-training-basic"
+  },
+  "root": {
+    "dag": {
+      "tasks": {
+        "custom-trainer": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-custom-trainer"
+          },
+          "inputs": {
+            "parameters": {
+              "boost_rounds": {
+                "componentInputParameter": "boost_rounds"
+              },
+              "label_uri": {
+                "componentInputParameter": "label_uri"
+              },
+              "learning_rate": {
+                "componentInputParameter": "learning_rate"
+              },
+              "max_depth": {
+                "componentInputParameter": "max_depth"
+              },
+              "model_id": {
+                "componentInputParameter": "model_id"
+              },
+              "model_uri": {
+                "componentInputParameter": "model_uri"
+              },
+              "train_uri": {
+                "componentInputParameter": "train_uri"
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "custom-trainer"
+          }
+        }
+      }
+    },
+    "inputDefinitions": {
+      "parameters": {
+        "boost_rounds": {
+          "parameterType": "NUMBER_INTEGER"
+        },
+        "label_uri": {
+          "parameterType": "STRING"
+        },
+        "learning_rate": {
+          "parameterType": "NUMBER_DOUBLE"
+        },
+        "max_depth": {
+          "parameterType": "NUMBER_INTEGER"
+        },
+        "model_id": {
+          "parameterType": "STRING"
+        },
+        "model_uri": {
+          "parameterType": "STRING"
+        },
+        "train_uri": {
+          "parameterType": "STRING"
+        }
+      }
+    }
+  },
+  "schemaVersion": "2.1.0",
+  "sdkVersion": "kfp-2.10.1"
+}

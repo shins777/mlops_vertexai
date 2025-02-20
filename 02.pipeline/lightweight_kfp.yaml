@@ -1,0 +1,283 @@
+# PIPELINE DEFINITION
+# Name: metadata-pipeline-v2
+# Inputs:
+#    message: str
+components:
+  comp-importer:
+    executorLabel: exec-importer
+    inputDefinitions:
+      parameters:
+        uri:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        artifact:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-preprocess:
+    executorLabel: exec-preprocess
+    inputDefinitions:
+      parameters:
+        message:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        out_dataset1:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        out_dataset2:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+      parameters:
+        out_param_path:
+          parameterType: STRING
+  comp-read-artifact-input:
+    executorLabel: exec-read-artifact-input
+    inputDefinitions:
+      artifacts:
+        generic:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+  comp-train:
+    executorLabel: exec-train
+    inputDefinitions:
+      artifacts:
+        imported_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        in_dataset1:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        in_dataset2:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+      parameters:
+        message:
+          parameterType: STRING
+        num_steps:
+          defaultValue: 3.0
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+    outputDefinitions:
+      artifacts:
+        generic_artifact:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+      parameters:
+        output_message:
+          parameterType: STRING
+defaultPipelineRoot: gs://mlops-0221/pipeline/shakespeare
+deploymentSpec:
+  executors:
+    exec-importer:
+      importer:
+        artifactUri:
+          constant: gs://ml-pipeline-playground/shakespeare1.txt
+        typeSchema:
+          schemaTitle: system.Dataset
+          schemaVersion: 0.0.1
+    exec-preprocess:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - preprocess
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.10.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef preprocess(\n    message: str,\n    out_dataset1: Output[Dataset],\n\
+          \    out_dataset2: Output[Dataset],    \n    out_param_path: OutputPath(str),\n\
+          ):\n    \"\"\"'\n    Mock' preprocessing step.\n    Writes out the passed\
+          \ in message to the output \"Dataset\"s and the output message.\n    \"\"\
+          \"\n    out_dataset1.metadata[\"hello\"] = \"there\"\n    out_dataset2.metadata[\"\
+          world\"] = \"OK\"\n\n    with open(out_dataset1.path, \"w\") as f:\n   \
+          \     f.write(message)\n\n    with open(out_dataset2.path, \"w\") as f:\n\
+          \        f.write(message)        \n\n    with open(out_param_path, \"w\"\
+          ) as f:\n        f.write(message)\n\n"
+        image: python:3.9
+    exec-read-artifact-input:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - read_artifact_input
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.10.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef read_artifact_input(\n    generic: Input[Artifact],\n):\n   \
+          \ with open(generic.path) as input_file:\n        generic_contents = input_file.read()\n\
+          \        print(f\"generic contents: {generic_contents}\")\n\n"
+        image: python:3.9
+    exec-train:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - train
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.10.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef train(\n    message: str,\n\n    in_dataset1: Input[Dataset],\n\
+          \    in_dataset2: Input[Dataset],\n\n    imported_dataset: Input[Dataset],\n\
+          \n    model: Output[Model],\n\n    num_steps: int = 3,\n\n) -> NamedTuple(\n\
+          \    \"Outputs\",\n    [\n        (\"output_message\", str),  # Return parameter.\n\
+          \        (\"generic_artifact\", Artifact),  # Return generic Artifact.\n\
+          \    ],\n):\n    \"\"\"'Mock' Training step.\n    Combines the contents\
+          \ of dataset_one and dataset_two into the\n    output Model.\n    Constructs\
+          \ a new output_message consisting of message repeated num_steps times.\n\
+          \    \"\"\"\n\n    with open(in_dataset1.path) as input_file:\n        read_in_dataset1\
+          \ = input_file.read()\n        print(f\"read_in_dataset1 : {read_in_dataset1}\"\
+          )\n\n    with open(in_dataset2.path) as input_file:\n        read_in_dataset2\
+          \ = input_file.read()\n        print(f\"read_in_dataset2 : {read_in_dataset2}\"\
+          )\n\n    with open(model.path, \"w\") as f:\n        f.write(\"My Model\"\
+          )\n        print(\"Model Saved:\", model)\n\n    model.metadata[\"accuracy\"\
+          ] = 0.9\n    model.metadata[\"framework\"] = \"Tensorflow\"\n    model.metadata[\"\
+          time_to_train_in_seconds\"] = 257\n\n    output_message = \" \".join([message\
+          \ for _ in range(num_steps)])\n    artifact_contents = f\"{read_in_dataset1}\\\
+          n{read_in_dataset2}\"\n\n    return (output_message, artifact_contents)\n\
+          \n"
+        image: python:3.9
+pipelineInfo:
+  name: metadata-pipeline-v2
+root:
+  dag:
+    tasks:
+      importer:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-importer
+        inputs:
+          parameters:
+            uri:
+              runtimeValue:
+                constant: gs://ml-pipeline-playground/shakespeare1.txt
+        taskInfo:
+          name: importer
+      preprocess:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-preprocess
+        inputs:
+          parameters:
+            message:
+              componentInputParameter: message
+        taskInfo:
+          name: preprocess
+      read-artifact-input:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-read-artifact-input
+        dependentTasks:
+        - train
+        inputs:
+          artifacts:
+            generic:
+              taskOutputArtifact:
+                outputArtifactKey: generic_artifact
+                producerTask: train
+        taskInfo:
+          name: read-artifact-input
+      train:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train
+        dependentTasks:
+        - importer
+        - preprocess
+        inputs:
+          artifacts:
+            imported_dataset:
+              taskOutputArtifact:
+                outputArtifactKey: artifact
+                producerTask: importer
+            in_dataset1:
+              taskOutputArtifact:
+                outputArtifactKey: out_dataset1
+                producerTask: preprocess
+            in_dataset2:
+              taskOutputArtifact:
+                outputArtifactKey: out_dataset2
+                producerTask: preprocess
+          parameters:
+            message:
+              taskOutputParameter:
+                outputParameterKey: out_param_path
+                producerTask: preprocess
+            num_steps:
+              runtimeValue:
+                constant: 5.0
+        taskInfo:
+          name: train
+  inputDefinitions:
+    parameters:
+      message:
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.10.1
