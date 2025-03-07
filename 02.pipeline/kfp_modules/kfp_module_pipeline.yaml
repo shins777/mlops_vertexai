@@ -1,0 +1,324 @@
+# PIPELINE DEFINITION
+# Name: kfp-module-pipeline
+# Description: desc for kfp_module_pipeline
+# Inputs:
+#    min_max_scaler: bool
+#    n_neighbors: int
+#    standard_scaler: bool
+components:
+  comp-create-dataset:
+    executorLabel: exec-create-dataset
+    outputDefinitions:
+      artifacts:
+        dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-deploy-model:
+    executorLabel: exec-deploy-model
+    inputDefinitions:
+      artifacts:
+        model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+      parameters:
+        model_display_name:
+          parameterType: STRING
+        model_serving_container_image_uri:
+          parameterType: STRING
+        model_serving_machine_type:
+          parameterType: STRING
+        project_id:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        vertex_endpoint:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        vertex_model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+  comp-normalize-dataset:
+    executorLabel: exec-normalize-dataset
+    inputDefinitions:
+      artifacts:
+        input_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+      parameters:
+        min_max_scaler:
+          parameterType: BOOLEAN
+        standard_scaler:
+          parameterType: BOOLEAN
+    outputDefinitions:
+      artifacts:
+        normalized_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-train-model:
+    executorLabel: exec-train-model
+    inputDefinitions:
+      artifacts:
+        normalized_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+      parameters:
+        n_neighbors:
+          parameterType: NUMBER_INTEGER
+    outputDefinitions:
+      artifacts:
+        model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+defaultPipelineRoot: gs://mlops-poc-0303/pipeline/iris/
+deploymentSpec:
+  executors:
+    exec-create-dataset:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - create_dataset
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.10.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' &&\
+          \ \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef create_dataset(dataset: Output[Dataset]):\n    import pandas\
+          \ as pd\n\n    csv_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/iris/iris.data'\n\
+          \    col_names = [\n        'Sepal_Length', 'Sepal_Width', 'Petal_Length',\
+          \ 'Petal_Width', 'Labels'\n    ]\n    df = pd.read_csv(csv_url, names=col_names)\n\
+          \n    with open(dataset.path, 'w') as f:\n        df.to_csv(f)\n\n"
+        image: python:3.10
+    exec-deploy-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - deploy_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.10.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'google-cloud-aiplatform'\
+          \ 'pandas' 'scikit-learn' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef deploy_model(\n    model: Input[Model],\n    project_id: str,\n\
+          \n    model_display_name:str,\n    model_serving_container_image_uri:str,\n\
+          \    model_serving_machine_type:str,\n\n    vertex_endpoint: Output[Artifact],\n\
+          \    vertex_model: Output[Model],\n):\n\n    from google.cloud import aiplatform\n\
+          \n    aiplatform.init(project=project_id)\n\n    deployed_model = aiplatform.Model.upload(\n\
+          \        display_name=model_display_name,\n        artifact_uri=model.uri,\n\
+          \        serving_container_image_uri=model_serving_container_image_uri,\n\
+          \    )\n\n    endpoint = deployed_model.deploy(machine_type=model_serving_machine_type)\n\
+          \n    vertex_endpoint.uri = endpoint.resource_name\n    vertex_model.uri\
+          \ = deployed_model.resource_name\n\n"
+        image: python:3.10
+    exec-normalize-dataset:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - normalize_dataset
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.10.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef normalize_dataset(\n    input_dataset: Input[Dataset],\n    normalized_dataset:\
+          \ Output[Dataset],\n    standard_scaler: bool,\n    min_max_scaler: bool,\n\
+          ):\n    if standard_scaler is min_max_scaler:\n        raise ValueError(\n\
+          \            'Exactly one of standard_scaler or min_max_scaler must be True.')\n\
+          \n    import pandas as pd\n    from sklearn.preprocessing import MinMaxScaler\n\
+          \    from sklearn.preprocessing import StandardScaler\n\n    with open(input_dataset.path)\
+          \ as f:\n        df = pd.read_csv(f)\n    labels = df.pop('Labels')\n\n\
+          \    if standard_scaler:\n        scaler = StandardScaler()\n    if min_max_scaler:\n\
+          \        scaler = MinMaxScaler()\n\n    df = pd.DataFrame(scaler.fit_transform(df))\n\
+          \    df['Labels'] = labels\n    with open(normalized_dataset.path, 'w')\
+          \ as f:\n        df.to_csv(f)\n\n"
+        image: python:3.10
+    exec-train-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - train_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.10.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef train_model(\n    n_neighbors: int,\n    normalized_dataset:\
+          \ Input[Dataset],\n    model: Output[Model],\n    # metrics: Output[Metrics],\n\
+          \n):\n    # import pickle\n    import joblib\n    import os\n    import\
+          \ pandas as pd\n    from sklearn.model_selection import train_test_split\n\
+          \    from sklearn.neighbors import KNeighborsClassifier\n\n    with open(normalized_dataset.path)\
+          \ as f:\n        df = pd.read_csv(f)\n\n    y = df.pop('Labels')\n    X\
+          \ = df\n\n    X_train, X_test, y_train, y_test = train_test_split(X, y,\
+          \ random_state=0)\n\n    clf = KNeighborsClassifier(n_neighbors=n_neighbors)\n\
+          \    clf.fit(X_train, y_train)\n\n    # metrics.log_metric(\"accuracy\"\
+          , \"99\")\n    # metrics.log_metric(\"framework\", \"sklearn\")\n    # metrics.log_metric(\"\
+          dataset_size\", \"100\")\n    # metrics.log_metric(\"AUC\", \"0.4\")   \
+          \ \n\n    # with open(model.path, 'wb') as f:\n    #     pickle.dump(clf,\
+          \ f)\n\n    # Export the model to a file\n    os.makedirs(model.path, exist_ok=True)\n\
+          \    joblib.dump(clf, os.path.join(model.path, \"model.joblib\"))      \
+          \  \n\n"
+        image: python:3.10
+pipelineInfo:
+  description: desc for kfp_module_pipeline
+  name: kfp-module-pipeline
+root:
+  dag:
+    tasks:
+      create-dataset:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-create-dataset
+        taskInfo:
+          name: create-dataset
+      deploy-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-deploy-model
+        dependentTasks:
+        - train-model
+        inputs:
+          artifacts:
+            model:
+              taskOutputArtifact:
+                outputArtifactKey: model
+                producerTask: train-model
+          parameters:
+            model_display_name:
+              runtimeValue:
+                constant: kfp_module_model
+            model_serving_container_image_uri:
+              runtimeValue:
+                constant: us-docker.pkg.dev/vertex-ai/prediction/sklearn-cpu.1-5:latest
+            model_serving_machine_type:
+              runtimeValue:
+                constant: e2-standard-4
+            project_id:
+              runtimeValue:
+                constant: ai-hangsik
+        taskInfo:
+          name: deploy-model
+      normalize-dataset:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-normalize-dataset
+        dependentTasks:
+        - create-dataset
+        inputs:
+          artifacts:
+            input_dataset:
+              taskOutputArtifact:
+                outputArtifactKey: dataset
+                producerTask: create-dataset
+          parameters:
+            min_max_scaler:
+              componentInputParameter: min_max_scaler
+            standard_scaler:
+              componentInputParameter: standard_scaler
+        taskInfo:
+          name: normalize-dataset
+      train-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-model
+        dependentTasks:
+        - normalize-dataset
+        inputs:
+          artifacts:
+            normalized_dataset:
+              taskOutputArtifact:
+                outputArtifactKey: normalized_dataset
+                producerTask: normalize-dataset
+          parameters:
+            n_neighbors:
+              componentInputParameter: n_neighbors
+        taskInfo:
+          name: train-model
+  inputDefinitions:
+    parameters:
+      min_max_scaler:
+        parameterType: BOOLEAN
+      n_neighbors:
+        parameterType: NUMBER_INTEGER
+      standard_scaler:
+        parameterType: BOOLEAN
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.10.1

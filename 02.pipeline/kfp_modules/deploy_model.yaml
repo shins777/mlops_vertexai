@@ -1,0 +1,141 @@
+# PIPELINE DEFINITION
+# Name: deploy-model
+# Inputs:
+#    model: system.Model
+#    model_display_name: str
+#    model_serving_container_image_uri: str
+#    model_serving_machine_type: str
+#    project_id: str
+# Outputs:
+#    vertex_endpoint: system.Artifact
+#    vertex_model: system.Model
+components:
+  comp-deploy-model:
+    executorLabel: exec-deploy-model
+    inputDefinitions:
+      artifacts:
+        model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+      parameters:
+        model_display_name:
+          parameterType: STRING
+        model_serving_container_image_uri:
+          parameterType: STRING
+        model_serving_machine_type:
+          parameterType: STRING
+        project_id:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        vertex_endpoint:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        vertex_model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-deploy-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - deploy_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.10.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'google-cloud-aiplatform'\
+          \ 'pandas' 'scikit-learn' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef deploy_model(\n    model: Input[Model],\n    project_id: str,\n\
+          \n    model_display_name:str,\n    model_serving_container_image_uri:str,\n\
+          \    model_serving_machine_type:str,\n\n    vertex_endpoint: Output[Artifact],\n\
+          \    vertex_model: Output[Model],\n):\n\n    from google.cloud import aiplatform\n\
+          \n    aiplatform.init(project=project_id)\n\n    deployed_model = aiplatform.Model.upload(\n\
+          \        display_name=model_display_name,\n        artifact_uri=model.uri,\n\
+          \        serving_container_image_uri=model_serving_container_image_uri,\n\
+          \    )\n\n    endpoint = deployed_model.deploy(machine_type=model_serving_machine_type)\n\
+          \n    vertex_endpoint.uri = endpoint.resource_name\n    vertex_model.uri\
+          \ = deployed_model.resource_name\n\n"
+        image: python:3.10
+pipelineInfo:
+  name: deploy-model
+root:
+  dag:
+    outputs:
+      artifacts:
+        vertex_endpoint:
+          artifactSelectors:
+          - outputArtifactKey: vertex_endpoint
+            producerSubtask: deploy-model
+        vertex_model:
+          artifactSelectors:
+          - outputArtifactKey: vertex_model
+            producerSubtask: deploy-model
+    tasks:
+      deploy-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-deploy-model
+        inputs:
+          artifacts:
+            model:
+              componentInputArtifact: model
+          parameters:
+            model_display_name:
+              componentInputParameter: model_display_name
+            model_serving_container_image_uri:
+              componentInputParameter: model_serving_container_image_uri
+            model_serving_machine_type:
+              componentInputParameter: model_serving_machine_type
+            project_id:
+              componentInputParameter: project_id
+        taskInfo:
+          name: deploy-model
+  inputDefinitions:
+    artifacts:
+      model:
+        artifactType:
+          schemaTitle: system.Model
+          schemaVersion: 0.0.1
+    parameters:
+      model_display_name:
+        parameterType: STRING
+      model_serving_container_image_uri:
+        parameterType: STRING
+      model_serving_machine_type:
+        parameterType: STRING
+      project_id:
+        parameterType: STRING
+  outputDefinitions:
+    artifacts:
+      vertex_endpoint:
+        artifactType:
+          schemaTitle: system.Artifact
+          schemaVersion: 0.0.1
+      vertex_model:
+        artifactType:
+          schemaTitle: system.Model
+          schemaVersion: 0.0.1
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.10.1

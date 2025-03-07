@@ -1,0 +1,74 @@
+# PIPELINE DEFINITION
+# Name: create-dataset
+# Outputs:
+#    dataset: system.Dataset
+components:
+  comp-create-dataset:
+    executorLabel: exec-create-dataset
+    outputDefinitions:
+      artifacts:
+        dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-create-dataset:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - create_dataset
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.10.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' &&\
+          \ \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef create_dataset(dataset: Output[Dataset]):\n    import pandas\
+          \ as pd\n\n    csv_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/iris/iris.data'\n\
+          \    col_names = [\n        'Sepal_Length', 'Sepal_Width', 'Petal_Length',\
+          \ 'Petal_Width', 'Labels'\n    ]\n    df = pd.read_csv(csv_url, names=col_names)\n\
+          \n    with open(dataset.path, 'w') as f:\n        df.to_csv(f)\n\n"
+        image: python:3.10
+pipelineInfo:
+  name: create-dataset
+root:
+  dag:
+    outputs:
+      artifacts:
+        dataset:
+          artifactSelectors:
+          - outputArtifactKey: dataset
+            producerSubtask: create-dataset
+    tasks:
+      create-dataset:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-create-dataset
+        taskInfo:
+          name: create-dataset
+  outputDefinitions:
+    artifacts:
+      dataset:
+        artifactType:
+          schemaTitle: system.Dataset
+          schemaVersion: 0.0.1
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.10.1
