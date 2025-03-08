@@ -2,8 +2,7 @@
 # Name: normalize-dataset
 # Inputs:
 #    input_dataset: system.Dataset
-#    min_max_scaler: bool
-#    standard_scaler: bool
+#    normalize_args: dict
 # Outputs:
 #    normalized_dataset: system.Dataset
 components:
@@ -16,10 +15,8 @@ components:
             schemaTitle: system.Dataset
             schemaVersion: 0.0.1
       parameters:
-        min_max_scaler:
-          parameterType: BOOLEAN
-        standard_scaler:
-          parameterType: BOOLEAN
+        normalize_args:
+          parameterType: STRUCT
     outputDefinitions:
       artifacts:
         normalized_dataset:
@@ -56,11 +53,13 @@ deploymentSpec:
           '
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
           \ *\n\ndef normalize_dataset(\n    input_dataset: Input[Dataset],\n    normalized_dataset:\
-          \ Output[Dataset],\n    standard_scaler: bool,\n    min_max_scaler: bool,\n\
-          ):\n    if standard_scaler is min_max_scaler:\n        raise ValueError(\n\
-          \            'Exactly one of standard_scaler or min_max_scaler must be True.')\n\
-          \n    import pandas as pd\n    from sklearn.preprocessing import MinMaxScaler\n\
-          \    from sklearn.preprocessing import StandardScaler\n\n    with open(input_dataset.path)\
+          \ Output[Dataset],\n    normalize_args:dict,\n\n    # standard_scaler: bool,\n\
+          \    # min_max_scaler: bool,\n):\n    import pandas as pd\n    from sklearn.preprocessing\
+          \ import MinMaxScaler\n    from sklearn.preprocessing import StandardScaler\n\
+          \n    standard_scaler = normalize_args['standard_scaler']\n    min_max_scaler\
+          \ = normalize_args['min_max_scaler']\n\n    if standard_scaler is min_max_scaler:\n\
+          \        raise ValueError(\n            'Exactly one of standard_scaler\
+          \ or min_max_scaler must be True.')\n\n    with open(input_dataset.path)\
           \ as f:\n        df = pd.read_csv(f)\n    labels = df.pop('Labels')\n\n\
           \    if standard_scaler:\n        scaler = StandardScaler()\n    if min_max_scaler:\n\
           \        scaler = MinMaxScaler()\n\n    df = pd.DataFrame(scaler.fit_transform(df))\n\
@@ -88,10 +87,8 @@ root:
             input_dataset:
               componentInputArtifact: input_dataset
           parameters:
-            min_max_scaler:
-              componentInputParameter: min_max_scaler
-            standard_scaler:
-              componentInputParameter: standard_scaler
+            normalize_args:
+              componentInputParameter: normalize_args
         taskInfo:
           name: normalize-dataset
   inputDefinitions:
@@ -101,10 +98,8 @@ root:
           schemaTitle: system.Dataset
           schemaVersion: 0.0.1
     parameters:
-      min_max_scaler:
-        parameterType: BOOLEAN
-      standard_scaler:
-        parameterType: BOOLEAN
+      normalize_args:
+        parameterType: STRUCT
   outputDefinitions:
     artifacts:
       normalized_dataset:

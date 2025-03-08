@@ -2,14 +2,23 @@
 # Name: kfp-module-pipeline
 # Description: desc for kfp_module_pipeline
 # Inputs:
-#    min_max_scaler: bool
-#    n_neighbors: int
-#    standard_scaler: bool
+#    data_args: dict
+#    deploy_args: dict
+#    normalize_args: dict
+#    train_args: dict
 components:
   comp-create-dataset:
     executorLabel: exec-create-dataset
+    inputDefinitions:
+      parameters:
+        data_args:
+          parameterType: STRUCT
     outputDefinitions:
       artifacts:
+        data_artifact:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
         dataset:
           artifactType:
             schemaTitle: system.Dataset
@@ -23,14 +32,8 @@ components:
             schemaTitle: system.Model
             schemaVersion: 0.0.1
       parameters:
-        model_display_name:
-          parameterType: STRING
-        model_serving_container_image_uri:
-          parameterType: STRING
-        model_serving_machine_type:
-          parameterType: STRING
-        project_id:
-          parameterType: STRING
+        deploy_args:
+          parameterType: STRUCT
     outputDefinitions:
       artifacts:
         vertex_endpoint:
@@ -50,10 +53,8 @@ components:
             schemaTitle: system.Dataset
             schemaVersion: 0.0.1
       parameters:
-        min_max_scaler:
-          parameterType: BOOLEAN
-        standard_scaler:
-          parameterType: BOOLEAN
+        normalize_args:
+          parameterType: STRUCT
     outputDefinitions:
       artifacts:
         normalized_dataset:
@@ -69,10 +70,14 @@ components:
             schemaTitle: system.Dataset
             schemaVersion: 0.0.1
       parameters:
-        n_neighbors:
-          parameterType: NUMBER_INTEGER
+        train_args:
+          parameterType: STRUCT
     outputDefinitions:
       artifacts:
+        metrics:
+          artifactType:
+            schemaTitle: system.Metrics
+            schemaVersion: 0.0.1
         model:
           artifactType:
             schemaTitle: system.Model
@@ -107,11 +112,16 @@ deploymentSpec:
 
           '
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
-          \ *\n\ndef create_dataset(dataset: Output[Dataset]):\n    import pandas\
-          \ as pd\n\n    csv_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/iris/iris.data'\n\
-          \    col_names = [\n        'Sepal_Length', 'Sepal_Width', 'Petal_Length',\
-          \ 'Petal_Width', 'Labels'\n    ]\n    df = pd.read_csv(csv_url, names=col_names)\n\
-          \n    with open(dataset.path, 'w') as f:\n        df.to_csv(f)\n\n"
+          \ *\n\ndef create_dataset(\n                data_args : dict,\n        \
+          \        data_artifact : Output[Artifact],\n                dataset: Output[Dataset]\n\
+          ):\n\n    import pandas as pd\n    import json\n\n    csv_url = data_args['csv_url']\n\
+          \    col_names = data_args['col_names']\n\n    # csv_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/iris/iris.data'\n\
+          \    # col_names = [\n    #     'Sepal_Length', 'Sepal_Width', 'Petal_Length',\
+          \ 'Petal_Width', 'Labels'\n    # ]\n\n    # Write a data args with type\
+          \ of Artifact\n    with open(data_artifact.path, 'w') as f:\n        f.write(json.dumps(data_args))\n\
+          \n    df = pd.read_csv(csv_url, names=col_names)\n\n    # Write a dataset\
+          \ with type of Dataset.\n    with open(dataset.path, 'w') as f:\n      \
+          \  df.to_csv(f)\n\n"
         image: python:3.10
     exec-deploy-model:
       container:
@@ -140,14 +150,15 @@ deploymentSpec:
 
           '
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
-          \ *\n\ndef deploy_model(\n    model: Input[Model],\n    project_id: str,\n\
-          \n    model_display_name:str,\n    model_serving_container_image_uri:str,\n\
-          \    model_serving_machine_type:str,\n\n    vertex_endpoint: Output[Artifact],\n\
-          \    vertex_model: Output[Model],\n):\n\n    from google.cloud import aiplatform\n\
-          \n    aiplatform.init(project=project_id)\n\n    deployed_model = aiplatform.Model.upload(\n\
-          \        display_name=model_display_name,\n        artifact_uri=model.uri,\n\
-          \        serving_container_image_uri=model_serving_container_image_uri,\n\
-          \    )\n\n    endpoint = deployed_model.deploy(machine_type=model_serving_machine_type)\n\
+          \ *\n\ndef deploy_model(\n    deploy_args:dict,\n    model: Input[Model],\n\
+          \    vertex_endpoint: Output[Artifact],\n    vertex_model: Output[Model],\n\
+          ):\n\n    from google.cloud import aiplatform\n\n    project_id = deploy_args['project_id']\n\
+          \    display_name = deploy_args['display_name']\n    container_image_uri\
+          \ = deploy_args['container_image_uri']\n    machine_type = deploy_args['machine_type']\
+          \    \n\n    aiplatform.init(project=project_id)\n\n    deployed_model =\
+          \ aiplatform.Model.upload(\n        display_name=display_name,\n       \
+          \ artifact_uri=model.uri,\n        serving_container_image_uri=container_image_uri,\n\
+          \    )\n\n    endpoint = deployed_model.deploy(machine_type=machine_type)\n\
           \n    vertex_endpoint.uri = endpoint.resource_name\n    vertex_model.uri\
           \ = deployed_model.resource_name\n\n"
         image: python:3.10
@@ -179,11 +190,13 @@ deploymentSpec:
           '
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
           \ *\n\ndef normalize_dataset(\n    input_dataset: Input[Dataset],\n    normalized_dataset:\
-          \ Output[Dataset],\n    standard_scaler: bool,\n    min_max_scaler: bool,\n\
-          ):\n    if standard_scaler is min_max_scaler:\n        raise ValueError(\n\
-          \            'Exactly one of standard_scaler or min_max_scaler must be True.')\n\
-          \n    import pandas as pd\n    from sklearn.preprocessing import MinMaxScaler\n\
-          \    from sklearn.preprocessing import StandardScaler\n\n    with open(input_dataset.path)\
+          \ Output[Dataset],\n    normalize_args:dict,\n\n    # standard_scaler: bool,\n\
+          \    # min_max_scaler: bool,\n):\n    import pandas as pd\n    from sklearn.preprocessing\
+          \ import MinMaxScaler\n    from sklearn.preprocessing import StandardScaler\n\
+          \n    standard_scaler = normalize_args['standard_scaler']\n    min_max_scaler\
+          \ = normalize_args['min_max_scaler']\n\n    if standard_scaler is min_max_scaler:\n\
+          \        raise ValueError(\n            'Exactly one of standard_scaler\
+          \ or min_max_scaler must be True.')\n\n    with open(input_dataset.path)\
           \ as f:\n        df = pd.read_csv(f)\n    labels = df.pop('Labels')\n\n\
           \    if standard_scaler:\n        scaler = StandardScaler()\n    if min_max_scaler:\n\
           \        scaler = MinMaxScaler()\n\n    df = pd.DataFrame(scaler.fit_transform(df))\n\
@@ -217,19 +230,20 @@ deploymentSpec:
 
           '
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
-          \ *\n\ndef train_model(\n    n_neighbors: int,\n    normalized_dataset:\
-          \ Input[Dataset],\n    model: Output[Model],\n    # metrics: Output[Metrics],\n\
-          \n):\n    # import pickle\n    import joblib\n    import os\n    import\
-          \ pandas as pd\n    from sklearn.model_selection import train_test_split\n\
-          \    from sklearn.neighbors import KNeighborsClassifier\n\n    with open(normalized_dataset.path)\
+          \ *\n\ndef train_model(\n    train_args:dict,\n    # n_neighbors: int,\n\
+          \    # in_test_size: float,\n    normalized_dataset: Input[Dataset],\n \
+          \   model: Output[Model],\n    metrics: Output[Metrics],\n\n):\n    import\
+          \ joblib\n    import os\n    import pandas as pd\n    from sklearn.model_selection\
+          \ import train_test_split\n    from sklearn.neighbors import KNeighborsClassifier\n\
+          \n    test_size = train_args['hyper_params']['in_test_size']\n    n_neighbors\
+          \ = train_args['hyper_params']['n_neighbors']\n\n    with open(normalized_dataset.path)\
           \ as f:\n        df = pd.read_csv(f)\n\n    y = df.pop('Labels')\n    X\
           \ = df\n\n    X_train, X_test, y_train, y_test = train_test_split(X, y,\
-          \ random_state=0)\n\n    clf = KNeighborsClassifier(n_neighbors=n_neighbors)\n\
-          \    clf.fit(X_train, y_train)\n\n    # metrics.log_metric(\"accuracy\"\
-          , \"99\")\n    # metrics.log_metric(\"framework\", \"sklearn\")\n    # metrics.log_metric(\"\
-          dataset_size\", \"100\")\n    # metrics.log_metric(\"AUC\", \"0.4\")   \
-          \ \n\n    # with open(model.path, 'wb') as f:\n    #     pickle.dump(clf,\
-          \ f)\n\n    # Export the model to a file\n    os.makedirs(model.path, exist_ok=True)\n\
+          \ random_state=0, test_size= test_size)\n\n    clf = KNeighborsClassifier(n_neighbors=n_neighbors)\n\
+          \    clf.fit(X_train, y_train)\n\n    metrics.log_metric(\"accuracy\", 99)\n\
+          \    metrics.log_metric(\"framework\", \"sklearn\")\n    metrics.log_metric(\"\
+          dataset_size\", 100)\n    metrics.log_metric(\"AUC\", 0.4)    \n\n    #\
+          \ Export the model to a file\n    os.makedirs(model.path, exist_ok=True)\n\
           \    joblib.dump(clf, os.path.join(model.path, \"model.joblib\"))      \
           \  \n\n"
         image: python:3.10
@@ -244,6 +258,10 @@ root:
           enableCache: true
         componentRef:
           name: comp-create-dataset
+        inputs:
+          parameters:
+            data_args:
+              componentInputParameter: data_args
         taskInfo:
           name: create-dataset
       deploy-model:
@@ -260,18 +278,8 @@ root:
                 outputArtifactKey: model
                 producerTask: train-model
           parameters:
-            model_display_name:
-              runtimeValue:
-                constant: kfp_module_model
-            model_serving_container_image_uri:
-              runtimeValue:
-                constant: us-docker.pkg.dev/vertex-ai/prediction/sklearn-cpu.1-5:latest
-            model_serving_machine_type:
-              runtimeValue:
-                constant: e2-standard-4
-            project_id:
-              runtimeValue:
-                constant: ai-hangsik
+            deploy_args:
+              componentInputParameter: deploy_args
         taskInfo:
           name: deploy-model
       normalize-dataset:
@@ -288,10 +296,8 @@ root:
                 outputArtifactKey: dataset
                 producerTask: create-dataset
           parameters:
-            min_max_scaler:
-              componentInputParameter: min_max_scaler
-            standard_scaler:
-              componentInputParameter: standard_scaler
+            normalize_args:
+              componentInputParameter: normalize_args
         taskInfo:
           name: normalize-dataset
       train-model:
@@ -308,17 +314,19 @@ root:
                 outputArtifactKey: normalized_dataset
                 producerTask: normalize-dataset
           parameters:
-            n_neighbors:
-              componentInputParameter: n_neighbors
+            train_args:
+              componentInputParameter: train_args
         taskInfo:
           name: train-model
   inputDefinitions:
     parameters:
-      min_max_scaler:
-        parameterType: BOOLEAN
-      n_neighbors:
-        parameterType: NUMBER_INTEGER
-      standard_scaler:
-        parameterType: BOOLEAN
+      data_args:
+        parameterType: STRUCT
+      deploy_args:
+        parameterType: STRUCT
+      normalize_args:
+        parameterType: STRUCT
+      train_args:
+        parameterType: STRUCT
 schemaVersion: 2.1.0
 sdkVersion: kfp-2.10.1

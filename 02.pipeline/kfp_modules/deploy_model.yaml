@@ -1,11 +1,8 @@
 # PIPELINE DEFINITION
 # Name: deploy-model
 # Inputs:
+#    deploy_args: dict
 #    model: system.Model
-#    model_display_name: str
-#    model_serving_container_image_uri: str
-#    model_serving_machine_type: str
-#    project_id: str
 # Outputs:
 #    vertex_endpoint: system.Artifact
 #    vertex_model: system.Model
@@ -19,14 +16,8 @@ components:
             schemaTitle: system.Model
             schemaVersion: 0.0.1
       parameters:
-        model_display_name:
-          parameterType: STRING
-        model_serving_container_image_uri:
-          parameterType: STRING
-        model_serving_machine_type:
-          parameterType: STRING
-        project_id:
-          parameterType: STRING
+        deploy_args:
+          parameterType: STRUCT
     outputDefinitions:
       artifacts:
         vertex_endpoint:
@@ -66,14 +57,15 @@ deploymentSpec:
 
           '
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
-          \ *\n\ndef deploy_model(\n    model: Input[Model],\n    project_id: str,\n\
-          \n    model_display_name:str,\n    model_serving_container_image_uri:str,\n\
-          \    model_serving_machine_type:str,\n\n    vertex_endpoint: Output[Artifact],\n\
-          \    vertex_model: Output[Model],\n):\n\n    from google.cloud import aiplatform\n\
-          \n    aiplatform.init(project=project_id)\n\n    deployed_model = aiplatform.Model.upload(\n\
-          \        display_name=model_display_name,\n        artifact_uri=model.uri,\n\
-          \        serving_container_image_uri=model_serving_container_image_uri,\n\
-          \    )\n\n    endpoint = deployed_model.deploy(machine_type=model_serving_machine_type)\n\
+          \ *\n\ndef deploy_model(\n    deploy_args:dict,\n    model: Input[Model],\n\
+          \    vertex_endpoint: Output[Artifact],\n    vertex_model: Output[Model],\n\
+          ):\n\n    from google.cloud import aiplatform\n\n    project_id = deploy_args['project_id']\n\
+          \    display_name = deploy_args['display_name']\n    container_image_uri\
+          \ = deploy_args['container_image_uri']\n    machine_type = deploy_args['machine_type']\
+          \    \n\n    aiplatform.init(project=project_id)\n\n    deployed_model =\
+          \ aiplatform.Model.upload(\n        display_name=display_name,\n       \
+          \ artifact_uri=model.uri,\n        serving_container_image_uri=container_image_uri,\n\
+          \    )\n\n    endpoint = deployed_model.deploy(machine_type=machine_type)\n\
           \n    vertex_endpoint.uri = endpoint.resource_name\n    vertex_model.uri\
           \ = deployed_model.resource_name\n\n"
         image: python:3.10
@@ -102,14 +94,8 @@ root:
             model:
               componentInputArtifact: model
           parameters:
-            model_display_name:
-              componentInputParameter: model_display_name
-            model_serving_container_image_uri:
-              componentInputParameter: model_serving_container_image_uri
-            model_serving_machine_type:
-              componentInputParameter: model_serving_machine_type
-            project_id:
-              componentInputParameter: project_id
+            deploy_args:
+              componentInputParameter: deploy_args
         taskInfo:
           name: deploy-model
   inputDefinitions:
@@ -119,14 +105,8 @@ root:
           schemaTitle: system.Model
           schemaVersion: 0.0.1
     parameters:
-      model_display_name:
-        parameterType: STRING
-      model_serving_container_image_uri:
-        parameterType: STRING
-      model_serving_machine_type:
-        parameterType: STRING
-      project_id:
-        parameterType: STRING
+      deploy_args:
+        parameterType: STRUCT
   outputDefinitions:
     artifacts:
       vertex_endpoint:

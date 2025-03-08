@@ -1,12 +1,23 @@
 # PIPELINE DEFINITION
 # Name: create-dataset
+# Inputs:
+#    data_args: dict
 # Outputs:
+#    data_artifact: system.Artifact
 #    dataset: system.Dataset
 components:
   comp-create-dataset:
     executorLabel: exec-create-dataset
+    inputDefinitions:
+      parameters:
+        data_args:
+          parameterType: STRUCT
     outputDefinitions:
       artifacts:
+        data_artifact:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
         dataset:
           artifactType:
             schemaTitle: system.Dataset
@@ -40,11 +51,15 @@ deploymentSpec:
 
           '
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
-          \ *\n\ndef create_dataset(dataset: Output[Dataset]):\n    import pandas\
-          \ as pd\n\n    csv_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/iris/iris.data'\n\
-          \    col_names = [\n        'Sepal_Length', 'Sepal_Width', 'Petal_Length',\
-          \ 'Petal_Width', 'Labels'\n    ]\n    df = pd.read_csv(csv_url, names=col_names)\n\
-          \n    with open(dataset.path, 'w') as f:\n        df.to_csv(f)\n\n"
+          \ *\n\ndef create_dataset(\n                data_args : dict,\n        \
+          \        data_artifact : Output[Artifact],\n                dataset: Output[Dataset]\n\
+          ):\n\n    import pandas as pd\n    import json\n    import ast\n\n    csv_url\
+          \ = data_args['csv_url']\n    col_names = ast.literal_eval(data_args['col_names'])\n\
+          \n    # Write a data args with type of Artifact\n    with open(data_artifact.path,\
+          \ 'w') as f:\n        f.write(json.dumps(data_args))\n\n    print(col_names)\n\
+          \    print(type(col_names))\n\n\n    df = pd.read_csv(csv_url, names=col_names)\n\
+          \n    # Write a dataset with type of Dataset.\n    with open(dataset.path,\
+          \ 'w') as f:\n        df.to_csv(f)\n\n"
         image: python:3.10
 pipelineInfo:
   name: create-dataset
@@ -52,6 +67,10 @@ root:
   dag:
     outputs:
       artifacts:
+        data_artifact:
+          artifactSelectors:
+          - outputArtifactKey: data_artifact
+            producerSubtask: create-dataset
         dataset:
           artifactSelectors:
           - outputArtifactKey: dataset
@@ -62,10 +81,22 @@ root:
           enableCache: true
         componentRef:
           name: comp-create-dataset
+        inputs:
+          parameters:
+            data_args:
+              componentInputParameter: data_args
         taskInfo:
           name: create-dataset
+  inputDefinitions:
+    parameters:
+      data_args:
+        parameterType: STRUCT
   outputDefinitions:
     artifacts:
+      data_artifact:
+        artifactType:
+          schemaTitle: system.Artifact
+          schemaVersion: 0.0.1
       dataset:
         artifactType:
           schemaTitle: system.Dataset
