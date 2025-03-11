@@ -54,10 +54,10 @@ deploymentSpec:
           \ *\n\ndef create_dataset(\n                data_args : dict,\n        \
           \        data_artifact : Output[Artifact],\n                dataset: Output[Dataset]\n\
           ):\n\n    import pandas as pd\n    import json\n    import ast\n\n    csv_url\
-          \ = data_args['csv_url']\n    col_names = ast.literal_eval(data_args['col_names'])\n\
-          \n    # Write a data args with type of Artifact\n    with open(data_artifact.path,\
-          \ 'w') as f:\n        f.write(json.dumps(data_args))\n\n    print(col_names)\n\
-          \    print(type(col_names))\n\n\n    df = pd.read_csv(csv_url, names=col_names)\n\
+          \ = data_args['csv_url']\n\n    # convert str to list.\n    col_names =\
+          \ ast.literal_eval(data_args['col_names'])\n\n    # Write a data args with\
+          \ type of Artifact\n    with open(data_artifact.path, 'w') as f:\n     \
+          \   f.write(json.dumps(data_args))\n\n    df = pd.read_csv(csv_url, names=col_names)\n\
           \n    # Write a dataset with type of Dataset.\n    with open(dataset.path,\
           \ 'w') as f:\n        df.to_csv(f)\n\n"
         image: python:3.10

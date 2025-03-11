@@ -53,13 +53,12 @@ deploymentSpec:
           '
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
           \ *\n\ndef normalize_dataset(\n    input_dataset: Input[Dataset],\n    normalized_dataset:\
-          \ Output[Dataset],\n    normalize_args:dict,\n\n    # standard_scaler: bool,\n\
-          \    # min_max_scaler: bool,\n):\n    import pandas as pd\n    from sklearn.preprocessing\
-          \ import MinMaxScaler\n    from sklearn.preprocessing import StandardScaler\n\
-          \n    standard_scaler = normalize_args['standard_scaler']\n    min_max_scaler\
-          \ = normalize_args['min_max_scaler']\n\n    if standard_scaler is min_max_scaler:\n\
-          \        raise ValueError(\n            'Exactly one of standard_scaler\
-          \ or min_max_scaler must be True.')\n\n    with open(input_dataset.path)\
+          \ Output[Dataset],\n    normalize_args:dict,\n):\n    import pandas as pd\n\
+          \    from sklearn.preprocessing import MinMaxScaler\n    from sklearn.preprocessing\
+          \ import StandardScaler\n\n    standard_scaler = normalize_args['standard_scaler']\n\
+          \    min_max_scaler = normalize_args['min_max_scaler']\n\n    if standard_scaler\
+          \ is min_max_scaler:\n        raise ValueError(\n            'Exactly one\
+          \ of standard_scaler or min_max_scaler must be True.')\n\n    with open(input_dataset.path)\
           \ as f:\n        df = pd.read_csv(f)\n    labels = df.pop('Labels')\n\n\
           \    if standard_scaler:\n        scaler = StandardScaler()\n    if min_max_scaler:\n\
           \        scaler = MinMaxScaler()\n\n    df = pd.DataFrame(scaler.fit_transform(df))\n\

@@ -69,9 +69,10 @@ deploymentSpec:
           \n    clf = KNeighborsClassifier(n_neighbors=n_neighbors)\n    clf.fit(X_train,\
           \ y_train)\n\n    metrics.log_metric(\"accuracy\", 99)\n    metrics.log_metric(\"\
           framework\", \"sklearn\")\n    metrics.log_metric(\"dataset_size\", 100)\n\
-          \    metrics.log_metric(\"AUC\", 0.4)    \n\n    # Export the model to a\
-          \ file\n    os.makedirs(model.path, exist_ok=True)\n    joblib.dump(clf,\
-          \ os.path.join(model.path, \"model.joblib\"))        \n\n"
+          \    metrics.log_metric(\"AUC\", 0.4)    \n\n    print(f\"Metrics URI :\
+          \ {metrics.uri}\")\n\n    # Export the model to a file\n    os.makedirs(model.path,\
+          \ exist_ok=True)\n    joblib.dump(clf, os.path.join(model.path, \"model.joblib\"\
+          ))        \n\n"
         image: python:3.10
 pipelineInfo:
   name: train-model

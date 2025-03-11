@@ -114,14 +114,13 @@ deploymentSpec:
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
           \ *\n\ndef create_dataset(\n                data_args : dict,\n        \
           \        data_artifact : Output[Artifact],\n                dataset: Output[Dataset]\n\
-          ):\n\n    import pandas as pd\n    import json\n\n    csv_url = data_args['csv_url']\n\
-          \    col_names = data_args['col_names']\n\n    # csv_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/iris/iris.data'\n\
-          \    # col_names = [\n    #     'Sepal_Length', 'Sepal_Width', 'Petal_Length',\
-          \ 'Petal_Width', 'Labels'\n    # ]\n\n    # Write a data args with type\
-          \ of Artifact\n    with open(data_artifact.path, 'w') as f:\n        f.write(json.dumps(data_args))\n\
-          \n    df = pd.read_csv(csv_url, names=col_names)\n\n    # Write a dataset\
-          \ with type of Dataset.\n    with open(dataset.path, 'w') as f:\n      \
-          \  df.to_csv(f)\n\n"
+          ):\n\n    import pandas as pd\n    import json\n    import ast\n\n    csv_url\
+          \ = data_args['csv_url']\n\n    # convert str to list.\n    col_names =\
+          \ ast.literal_eval(data_args['col_names'])\n\n    # Write a data args with\
+          \ type of Artifact\n    with open(data_artifact.path, 'w') as f:\n     \
+          \   f.write(json.dumps(data_args))\n\n    df = pd.read_csv(csv_url, names=col_names)\n\
+          \n    # Write a dataset with type of Dataset.\n    with open(dataset.path,\
+          \ 'w') as f:\n        df.to_csv(f)\n\n"
         image: python:3.10
     exec-deploy-model:
       container:
@@ -190,13 +189,12 @@ deploymentSpec:
           '
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
           \ *\n\ndef normalize_dataset(\n    input_dataset: Input[Dataset],\n    normalized_dataset:\
-          \ Output[Dataset],\n    normalize_args:dict,\n\n    # standard_scaler: bool,\n\
-          \    # min_max_scaler: bool,\n):\n    import pandas as pd\n    from sklearn.preprocessing\
-          \ import MinMaxScaler\n    from sklearn.preprocessing import StandardScaler\n\
-          \n    standard_scaler = normalize_args['standard_scaler']\n    min_max_scaler\
-          \ = normalize_args['min_max_scaler']\n\n    if standard_scaler is min_max_scaler:\n\
-          \        raise ValueError(\n            'Exactly one of standard_scaler\
-          \ or min_max_scaler must be True.')\n\n    with open(input_dataset.path)\
+          \ Output[Dataset],\n    normalize_args:dict,\n):\n    import pandas as pd\n\
+          \    from sklearn.preprocessing import MinMaxScaler\n    from sklearn.preprocessing\
+          \ import StandardScaler\n\n    standard_scaler = normalize_args['standard_scaler']\n\
+          \    min_max_scaler = normalize_args['min_max_scaler']\n\n    if standard_scaler\
+          \ is min_max_scaler:\n        raise ValueError(\n            'Exactly one\
+          \ of standard_scaler or min_max_scaler must be True.')\n\n    with open(input_dataset.path)\
           \ as f:\n        df = pd.read_csv(f)\n    labels = df.pop('Labels')\n\n\
           \    if standard_scaler:\n        scaler = StandardScaler()\n    if min_max_scaler:\n\
           \        scaler = MinMaxScaler()\n\n    df = pd.DataFrame(scaler.fit_transform(df))\n\
@@ -230,22 +228,22 @@ deploymentSpec:
 
           '
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
-          \ *\n\ndef train_model(\n    train_args:dict,\n    # n_neighbors: int,\n\
-          \    # in_test_size: float,\n    normalized_dataset: Input[Dataset],\n \
-          \   model: Output[Model],\n    metrics: Output[Metrics],\n\n):\n    import\
+          \ *\n\ndef train_model(\n    train_args:dict,\n    normalized_dataset: Input[Dataset],\n\
+          \    model: Output[Model],\n    metrics: Output[Metrics],\n\n):\n    import\
           \ joblib\n    import os\n    import pandas as pd\n    from sklearn.model_selection\
           \ import train_test_split\n    from sklearn.neighbors import KNeighborsClassifier\n\
-          \n    test_size = train_args['hyper_params']['in_test_size']\n    n_neighbors\
-          \ = train_args['hyper_params']['n_neighbors']\n\n    with open(normalized_dataset.path)\
-          \ as f:\n        df = pd.read_csv(f)\n\n    y = df.pop('Labels')\n    X\
-          \ = df\n\n    X_train, X_test, y_train, y_test = train_test_split(X, y,\
-          \ random_state=0, test_size= test_size)\n\n    clf = KNeighborsClassifier(n_neighbors=n_neighbors)\n\
-          \    clf.fit(X_train, y_train)\n\n    metrics.log_metric(\"accuracy\", 99)\n\
-          \    metrics.log_metric(\"framework\", \"sklearn\")\n    metrics.log_metric(\"\
-          dataset_size\", 100)\n    metrics.log_metric(\"AUC\", 0.4)    \n\n    #\
-          \ Export the model to a file\n    os.makedirs(model.path, exist_ok=True)\n\
-          \    joblib.dump(clf, os.path.join(model.path, \"model.joblib\"))      \
-          \  \n\n"
+          \n    test_size = float(train_args['hyper_params']['in_test_size'].strip())\n\
+          \    n_neighbors = int(train_args['hyper_params']['n_neighbors'].strip())\n\
+          \n    with open(normalized_dataset.path) as f:\n        df = pd.read_csv(f)\n\
+          \n    y = df.pop('Labels')\n    X = df\n\n    X_train, X_test, y_train,\
+          \ y_test = train_test_split(X, y, random_state=0, test_size= test_size)\n\
+          \n    clf = KNeighborsClassifier(n_neighbors=n_neighbors)\n    clf.fit(X_train,\
+          \ y_train)\n\n    metrics.log_metric(\"accuracy\", 99)\n    metrics.log_metric(\"\
+          framework\", \"sklearn\")\n    metrics.log_metric(\"dataset_size\", 100)\n\
+          \    metrics.log_metric(\"AUC\", 0.4)    \n\n    print(f\"Metrics URI :\
+          \ {metrics.uri}\")\n\n    # Export the model to a file\n    os.makedirs(model.path,\
+          \ exist_ok=True)\n    joblib.dump(clf, os.path.join(model.path, \"model.joblib\"\
+          ))        \n\n"
         image: python:3.10
 pipelineInfo:
   description: desc for kfp_module_pipeline
